@@ -5,6 +5,7 @@ from tensorflow import keras
 import numpy as np
 import joblib
 import os
+import xgboost as xgb
 
 class LSTMModel:
     """
@@ -150,13 +151,139 @@ class LSTMModel:
         }
 
 
-# Placeholder for XGBoost (we'll add this tomorrow)
+
+# XGBoost Model Implementation
 class XGBoostModel:
     """
     XGBoost Model for stock price prediction
-    (To be implemented)
     """
     
-    def __init__(self):
-        print("⏳ XGBoost model - Coming soon!")
-        pass
+    def __init__(self, n_estimators=100, max_depth=5, learning_rate=0.1):
+        """
+        Initialize XGBoost Model
+        
+        Args:
+            n_estimators: Number of boosting rounds (default 100)
+            max_depth: Maximum tree depth (default 5)
+            learning_rate: Learning rate (default 0.1)
+        """
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.learning_rate = learning_rate
+        self.model = None
+        
+    def build_model(self):
+        """
+        Build the XGBoost model
+        
+        Returns:
+            XGBoost Regressor
+        """
+        self.model = xgb.XGBRegressor(
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            learning_rate=self.learning_rate,
+            objective='reg:squarederror',
+            random_state=42,
+            n_jobs=-1  # Use all CPU cores
+        )
+        
+        print("✅ XGBoost Model built successfully!")
+        print(f"   Parameters: n_estimators={self.n_estimators}, max_depth={self.max_depth}, lr={self.learning_rate}")
+        
+        return self.model
+    
+    def train(self, X_train, y_train, verbose=True):
+        """
+        Train the XGBoost model
+        
+        Args:
+            X_train: Training features
+            y_train: Training targets
+            verbose: Print training progress
+        
+        Returns:
+            Trained model
+        """
+        if self.model is None:
+            self.build_model()
+        
+        print(f"\n🚀 Training XGBoost model...")
+        
+        self.model.fit(
+            X_train, 
+            y_train,
+            verbose=verbose
+        )
+        
+        print("✅ Training completed!")
+        return self.model
+    
+    def predict(self, X_test):
+        """
+        Make predictions using the trained model
+        
+        Args:
+            X_test: Test features
+        
+        Returns:
+            numpy array: Predictions
+        """
+        if self.model is None:
+            raise ValueError("Model not trained! Call train() first.")
+        
+        predictions = self.model.predict(X_test)
+        return predictions
+    
+    def save_model(self, filepath='models/saved_models/xgboost_model.json'):
+        """
+        Save the trained model
+        
+        Args:
+            filepath: Path to save the model
+        """
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        self.model.save_model(filepath)
+        print(f"✅ Model saved to {filepath}")
+    
+    def load_model(self, filepath='models/saved_models/xgboost_model.json'):
+        """
+        Load a saved model
+        
+        Args:
+            filepath: Path to the saved model
+        """
+        self.model = xgb.XGBRegressor()
+        self.model.load_model(filepath)
+        print(f"✅ Model loaded from {filepath}")
+        return self.model
+    
+    def get_feature_importance(self):
+        """
+        Get feature importance scores
+        
+        Returns:
+            dict: Feature importance
+        """
+        if self.model is None:
+            raise ValueError("Model not trained!")
+        
+        importance = self.model.feature_importances_
+        return importance
+    
+    def get_model_info(self):
+        """
+        Get model information
+        
+        Returns:
+            dict: Model information
+        """
+        return {
+            'Model Type': 'XGBoost (eXtreme Gradient Boosting)',
+            'Algorithm': 'Gradient Boosted Decision Trees',
+            'N Estimators': self.n_estimators,
+            'Max Depth': self.max_depth,
+            'Learning Rate': self.learning_rate,
+            'Objective': 'Regression (Squared Error)',
+            'Features Used': 'MA_7, MA_21, MA_50, RSI, Time features, Lag features'
+        }

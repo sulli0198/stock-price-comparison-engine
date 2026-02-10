@@ -9,6 +9,7 @@ from src.data_processor import DataProcessor
 from src.model_engine import LSTMModel
 from src.visualizer import Visualizer
 from src.utils import get_metrics
+from src.model_engine import XGBoostModel
 import os
 
 # Page configuration
@@ -74,10 +75,16 @@ with st.sidebar:
     
     # Model parameters
     st.subheader("LSTM Parameters")
-    epochs = st.slider("Training Epochs", min_value=10, max_value=50, value=20, step=5)
+    epochs = st.slider("Training Epochs", min_value=10, max_value=50, value=25, step=5)
     batch_size = st.slider("Batch Size", min_value=16, max_value=64, value=32, step=16)
     
     st.markdown("---")
+
+    st.subheader("XGBoost Parameters")
+    n_estimators = st.slider("N Estimators", min_value=50, max_value=500, value=200, step=50)
+    max_depth = st.slider("Max Depth", min_value=3, max_value=15, value=7, step=1)
+    learning_rate = st.slider("Learning Rate", min_value=0.01, max_value=0.3, value=0.05, step=0.01)
+
     st.subheader("About")
     st.info("""
     This dashboard demonstrates stock price prediction using:
@@ -246,53 +253,259 @@ with tab1:
         st.session_state['test_data'] = test_data
         st.session_state['train_data'] = train_data
 
+
 # ===========================
 # TAB 2: XGBOOST MODEL
 # ===========================
 with tab2:
-    st.header("🟣 XGBoost Model")
-    st.info("⏳ XGBoost model implementation coming soon! (Tomorrow's work)")
+    st.header("🟣 XGBoost Model - Gradient Boosted Trees")
     
-    st.markdown("""
-    ### What is XGBoost?
-    XGBoost (eXtreme Gradient Boosting) is a powerful machine learning algorithm that uses 
-    decision trees and gradient boosting.
+    col1, col2 = st.columns([2, 1])
     
-    **For stock prediction, we'll use:**
-    - Moving Averages (7, 21, 50 days)
-    - RSI (Relative Strength Index)
-    - Day of week and month features
-    - Lagged price features
-    """)
+    with col1:
+        st.markdown("""
+        ### About XGBoost Model
+        XGBoost (eXtreme Gradient Boosting) is a powerful machine learning algorithm that uses 
+        gradient boosting on decision trees. Unlike LSTM, it doesn't have built-in memory, 
+        so we engineer features to capture temporal patterns.
+        
+        **Key Features:**
+        - Uses 13 engineered features (Moving Averages, RSI, Lag prices, etc.)
+        - Fast training compared to deep learning
+        - Handles non-linear relationships well
+        - Feature importance visualization
+        """)
+    
+    with col2:
+        st.markdown("""
+        ### Engineered Features
+        - **Moving Averages**: 7, 21, 50 days
+        - **RSI**: Momentum indicator
+        - **Time Features**: Day, Month, Quarter
+        - **Lag Features**: Previous 3 days prices
+        - **Volatility**: Rolling std deviation
+        - **Price Changes**: Absolute & percentage
+        """)
+    
+    st.markdown("---")
+    
+    # Train button
+    if st.button("🚀 Train XGBoost Model", type="primary", use_container_width=True):
+        
+        with st.spinner("🔄 Creating features..."):
+            # Create XGBoost features
+            X_train, X_test, y_train, y_test = processor.create_xgboost_features()
+        
+        st.success("✅ Features created successfully!")
+        
+        # Display feature info
+        feature_names = [
+            'MA_Ratio_7_21', 'MA_Ratio_21_50',
+            'RSI', 
+            'Day', 'Month',
+            'Lag_1', 'Lag_2', 'Lag_3', 'Lag_4', 'Lag_5',
+            'Price_Change_Pct_1d', 'Price_Change_Pct_5d',
+            'Volatility_10', 'Volatility_30'
+        ]
+        
+        with st.expander("📊 View Feature Statistics"):
+           
+            feature_df = pd.DataFrame(X_train, columns=feature_names)
+            st.dataframe(feature_df.describe(), use_container_width=True)
+        
+        # Initialize model
+       
+        xgb_model = XGBoostModel(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate
+        )
+        
+        # Training
+        with st.spinner(f"🤖 Training XGBoost model... This is faster than LSTM!"):
+            progress_bar = st.progress(0)
+            
+            xgb_model.train(X_train, y_train, verbose=False)
+            
+            progress_bar.progress(100)
+        
+        st.success("✅ Training completed!")
+        
+        # Make predictions
+        with st.spinner("🔮 Making predictions..."):
+            predictions = xgb_model.predict(X_test)
+        
+        # Calculate metrics
+        metrics = get_metrics(y_test, predictions)
+        
+        # Display metrics
+        st.subheader("📊 Model Performance")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.metric(
+                label="Root Mean Squared Error (RMSE)",
+                value=f"{metrics['RMSE']:.4f}",
+                delta=None
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.metric(
+                label="Mean Absolute Error (MAE)",
+                value=f"{metrics['MAE']:.4f}",
+                delta=None
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.info(f"""
+        **Interpretation:**
+        - RMSE of {metrics['RMSE']:.4f} means predictions are off by approximately {metrics['RMSE']:.4f} on average.
+        - MAE of {metrics['MAE']:.4f} shows the average absolute difference between predicted and actual prices.
+        """)
+        
+        # Visualizations
+        st.markdown("---")
+        st.subheader("📈 Prediction Visualization")
+        
+        # Get train and test data for XGBoost
+        train_data_xgb, test_data_xgb = processor.get_xgboost_train_test_data()
+        test_data_xgb = test_data_xgb.copy()
+        test_data_xgb['Predictions'] = predictions
+        
+        # Create visualizer
+        viz = Visualizer()
+        
+        # Plot predictions (reuse LSTM plotting function)
+        fig = viz.plot_lstm_predictions(
+            train_data_xgb, 
+            test_data_xgb, 
+            predictions,
+            title="XGBoost Stock Price Prediction"
+        )
+        st.pyplot(fig)
+        
+        # Feature Importance
+        st.markdown("---")
+        st.subheader("🎯 Feature Importance")
+        st.markdown("See which features contributed most to the predictions:")
+        
+        feature_importance = xgb_model.get_feature_importance()
+        fig_importance = viz.plot_feature_importance(feature_importance, feature_names)
+        st.pyplot(fig_importance)
+        
+        # Save model
+        if st.button("💾 Save Trained XGBoost Model"):
+            xgb_model.save_model()
+            st.success("✅ Model saved successfully!")
+        
+        # Store in session state for comparison tab
+        st.session_state['xgb_predictions'] = predictions
+        st.session_state['xgb_metrics'] = metrics
+        st.session_state['xgb_test_data'] = test_data_xgb
+        st.session_state['xgb_train_data'] = train_data_xgb
 
 # ===========================
 # TAB 3: COMPARISON
 # ===========================
 with tab3:
-    st.header("⚖️ Model Comparison")
+    st.header("⚖️ Model Comparison - LSTM vs XGBoost")
     
-    if 'lstm_predictions' in st.session_state:
+    # Check if both models are trained
+    lstm_trained = 'lstm_predictions' in st.session_state
+    xgb_trained = 'xgb_predictions' in st.session_state
+    
+    if lstm_trained and xgb_trained:
+        
+        # Performance Metrics Comparison
         st.subheader("📊 Performance Metrics Comparison")
         
-        # Create comparison table
         comparison_df = pd.DataFrame({
             'Model': ['LSTM', 'XGBoost'],
-            'RMSE': [st.session_state['lstm_metrics']['RMSE'], 'Coming Soon'],
-            'MAE': [st.session_state['lstm_metrics']['MAE'], 'Coming Soon'],
-            'Status': ['✅ Trained', '⏳ Pending']
+            'RMSE': [
+                f"{st.session_state['lstm_metrics']['RMSE']:.4f}",
+                f"{st.session_state['xgb_metrics']['RMSE']:.4f}"
+            ],
+            'MAE': [
+                f"{st.session_state['lstm_metrics']['MAE']:.4f}",
+                f"{st.session_state['xgb_metrics']['MAE']:.4f}"
+            ],
+            'Status': ['✅ Trained', '✅ Trained']
         })
         
         st.dataframe(comparison_df, use_container_width=True)
         
-        st.info("Full comparison will be available once both models are trained!")
+        # Determine winner
+        lstm_rmse = st.session_state['lstm_metrics']['RMSE']
+        xgb_rmse = st.session_state['xgb_metrics']['RMSE']
+        
+        if lstm_rmse < xgb_rmse:
+            winner = "🏆 LSTM performs better!"
+            diff = xgb_rmse - lstm_rmse
+            st.success(f"{winner} LSTM has {diff:.4f} lower RMSE than XGBoost.")
+        else:
+            winner = "🏆 XGBoost performs better!"
+            diff = lstm_rmse - xgb_rmse
+            st.success(f"{winner} XGBoost has {diff:.4f} lower RMSE than LSTM.")
+        
+        # Side-by-side comparison visualization
+        st.markdown("---")
+        st.subheader("📈 Visual Comparison")
+        
+        viz = Visualizer()
+        
+        # Use LSTM's train/test data (they should have similar date ranges)
+        fig_comparison = viz.plot_comparison(
+            st.session_state['train_data'],
+            st.session_state['test_data'],
+            st.session_state['lstm_predictions'],
+            st.session_state['xgb_predictions']
+        )
+        st.pyplot(fig_comparison)
+        
+        # Analysis
+        st.markdown("---")
+        st.subheader("🔍 Analysis: Why Different Results?")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            ### LSTM Approach
+            - **Sequential Learning**: Learns patterns from 60-day sequences
+            - **Memory**: Has built-in memory to remember past trends
+            - **Deep Learning**: Multiple layers capture complex patterns
+            - **Best for**: Long-term dependencies and trends
+            """)
+        
+        with col2:
+            st.markdown("""
+            ### XGBoost Approach
+            - **Feature-Based**: Uses engineered features (MA, RSI, etc.)
+            - **Tree Ensemble**: Combines multiple decision trees
+            - **Fast Training**: Much quicker than neural networks
+            - **Best for**: Non-linear relationships and interpretability
+            """)
+        
+        st.info("""
+        **Key Differences:**
+        - LSTM sees the data as a sequence of prices over time
+        - XGBoost sees each day as independent features (moving averages, indicators, etc.)
+        - LSTM might capture long-term trends better
+        - XGBoost might react faster to recent changes (via lag features)
+        - Performance depends on the specific stock and time period
+        """)
+        
+    elif lstm_trained and not xgb_trained:
+        st.warning("⚠️ Please train the XGBoost model to see full comparison!")
+        st.info("Go to the **XGBoost Model** tab and click 'Train XGBoost Model'")
+        
+    elif not lstm_trained and xgb_trained:
+        st.warning("⚠️ Please train the LSTM model to see full comparison!")
+        st.info("Go to the **LSTM Model** tab and click 'Train LSTM Model'")
+        
     else:
-        st.warning("⚠️ Please train the LSTM model first to see comparison!")
-
-# Footer
-st.markdown("---")
-st.markdown("""
-    <div style='text-align: center; color: #666;'>
-        <p>📚 BCA Final Year Project | Stock Price Prediction System</p>
-        <p>Built with Streamlit, TensorFlow, and XGBoost</p>
-    </div>
-""", unsafe_allow_html=True)
+        st.warning("⚠️ Please train both models to see comparison!")
+        st.info("Train LSTM in tab 1 and XGBoost in tab 2, then come back here.")

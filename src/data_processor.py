@@ -130,3 +130,108 @@ class DataProcessor:
         test = self.data[self.training_data_len:].copy()
         
         return train, test
+    
+    def create_xgboost_features(self):
+        """
+        Create engineered features for XGBoost model
+        Includes: Moving Averages, RSI, Time features
+        
+        Returns:
+            tuple: (X_train, X_test, y_train, y_test)
+        """
+        df = self.data.copy()
+        
+        # Sort by date to ensure chronological order
+        df = df.sort_values('date').reset_index(drop=True)
+        
+        # 1. Moving Averages
+        df['MA_7'] = df['close'].rolling(window=7).mean()
+        df['MA_21'] = df['close'].rolling(window=21).mean()
+        df['MA_50'] = df['close'].rolling(window=50).mean()
+        
+        # 2. Moving Average Ratios (better than absolute values)
+        df['MA_Ratio_7_21'] = df['MA_7'] / df['MA_21']
+        df['MA_Ratio_21_50'] = df['MA_21'] / df['MA_50']
+        
+        # 3. RSI (Relative Strength Index)
+        def calculate_rsi(data, window=14):
+            delta = data.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        
+        df['RSI'] = calculate_rsi(df['close'])
+        
+        # 4. Time-based features
+        df['Day'] = df['date'].dt.dayofweek
+        df['Month'] = df['date'].dt.month
+        
+        # 5. Lag features - MORE of them
+        for i in range(1, 6):  # Last 5 days
+            df[f'Lag_{i}'] = df['close'].shift(i)
+        
+        # 6. Price change percentage (more stable than absolute)
+        df['Price_Change_Pct_1d'] = df['close'].pct_change(1) * 100
+        df['Price_Change_Pct_5d'] = df['close'].pct_change(5) * 100
+        
+        # 7. Volatility
+        df['Volatility_10'] = df['close'].rolling(window=10).std()
+        df['Volatility_30'] = df['close'].rolling(window=30).std()
+        
+        # Drop rows with NaN values
+        df = df.dropna().reset_index(drop=True)
+        
+        # ✅ IMPROVED: Use percentage-based features instead of absolute prices
+        feature_columns = [
+            'MA_Ratio_7_21', 'MA_Ratio_21_50',  # Ratios instead of absolute MA
+            'RSI', 
+            'Day', 'Month',
+            'Lag_1', 'Lag_2', 'Lag_3', 'Lag_4', 'Lag_5',
+            'Price_Change_Pct_1d', 'Price_Change_Pct_5d',
+            'Volatility_10', 'Volatility_30'
+        ]
+        
+        X = df[feature_columns].values
+        y = df['close'].values
+        
+        # Train-test split
+        train_size = int(len(X) * 0.95)
+        
+        X_train = X[:train_size]
+        X_test = X[train_size:]
+        y_train = y[:train_size]
+        y_test = y[train_size:]
+        
+        # Feature scaling
+        from sklearn.preprocessing import StandardScaler
+        self.xgb_scaler = StandardScaler()
+        X_train = self.xgb_scaler.fit_transform(X_train)
+        X_test = self.xgb_scaler.transform(X_test)
+        
+        print(f"✅ XGBoost features created and scaled!")
+        print(f"   Features: {len(feature_columns)}")
+        print(f"   Training samples: {len(X_train)}")
+        print(f"   Test samples: {len(X_test)}")
+        
+        # Store for later use
+        self.xgboost_df = df
+        self.xgboost_train_size = train_size
+        
+        return X_train, X_test, y_train, y_test
+
+    def get_xgboost_train_test_data(self):
+        """
+        Get train and test dataframes for XGBoost (with dates)
+        
+        Returns:
+            tuple: (train_df, test_df)
+        """
+        if not hasattr(self, 'xgboost_df'):
+            raise ValueError("Call create_xgboost_features() first!")
+        
+        train = self.xgboost_df[:self.xgboost_train_size].copy()
+        test = self.xgboost_df[self.xgboost_train_size:].copy()
+        
+        return train, test

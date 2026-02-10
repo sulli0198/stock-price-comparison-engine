@@ -143,6 +143,7 @@ class Visualizer:
         return fig
     
     def plot_training_history(self, history):
+
         """
         Plot training loss history for LSTM
         
@@ -167,6 +168,37 @@ class Visualizer:
         ax2.set_xlabel('Epoch', fontsize=11)
         ax2.set_ylabel('RMSE', fontsize=11)
         ax2.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        return fig
+    
+    def plot_feature_importance(self, feature_importance, feature_names):
+        """
+        Plot feature importance for XGBoost
+        
+        Args:
+            feature_importance: Array of importance scores
+            feature_names: List of feature names
+        
+        Returns:
+            matplotlib figure object
+        """
+        import pandas as pd
+        
+        # Create dataframe for sorting
+        importance_df = pd.DataFrame({
+            'Feature': feature_names,
+            'Importance': feature_importance
+        }).sort_values('Importance', ascending=True)
+        
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Horizontal bar chart
+        ax.barh(importance_df['Feature'], importance_df['Importance'], color='#9467bd')
+        ax.set_xlabel('Importance Score', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Features', fontsize=12, fontweight='bold')
+        ax.set_title('XGBoost Feature Importance', fontsize=14, fontweight='bold', pad=20)
+        ax.grid(True, alpha=0.3, axis='x')
         
         plt.tight_layout()
         return fig
