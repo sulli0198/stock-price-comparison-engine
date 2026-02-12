@@ -54,7 +54,7 @@ class Visualizer:
         ax.plot(
             test_data['date'], 
             predictions, 
-            label='LSTM Predictions', 
+            label='Predictions', 
             color='#d62728',
             linewidth=2,
             linestyle='--'

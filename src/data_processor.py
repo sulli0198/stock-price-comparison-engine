@@ -50,20 +50,31 @@ class DataProcessor:
     
     def scale_data(self, dataset, train_ratio=0.95):
         """
-        Scale the data using StandardScaler
-        
-        Args:
-            dataset: Raw price data
-            train_ratio: Percentage of data for training (default 95%)
-        
-        Returns:
-            tuple: (scaled_data, training_data_length)
+        scale the data WITHOUT leakage.
+        Fit scaler ONLY on training data.
         """
+        # Split index first
         self.training_data_len = int(np.ceil(len(dataset) * train_ratio))
-        self.scaled_data = self.scaler.fit_transform(dataset)
         
-        print(f"✅ Data scaled! Training samples: {self.training_data_len}")
+        # Split raw data
+        train_data = dataset[:self.training_data_len]
+        test_data = dataset[self.training_data_len:]
+        
+        # Fit scaler ONLY on training data
+        self.scaler.fit(train_data)
+        
+        # Transform both
+        train_scaled = self.scaler.transform(train_data)
+        test_scaled = self.scaler.transform(test_data)
+        
+        # Combine back in correct order
+        self.scaled_data = np.vstack((train_scaled, test_scaled))
+        
+        print(f"✅ Data scaled properly (NO leakage)!")
+        print(f"   Training samples: {self.training_data_len}")
+        
         return self.scaled_data, self.training_data_len
+
     
     def create_lstm_sequences(self, sequence_length=60):
         """
@@ -90,7 +101,15 @@ class DataProcessor:
         x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
         
         # Test data
-        test_data = self.scaled_data[self.training_data_len - sequence_length:]
+        train_scaled = self.scaled_data[:self.training_data_len]
+        test_scaled = self.scaled_data[self.training_data_len:]
+
+        # Combine last sequence_length from train for continuity
+        test_data = np.vstack((
+            train_scaled[-sequence_length:],
+            test_scaled
+        ))
+
         dataset = self.get_close_prices()
         
         x_test, y_test = [], dataset[self.training_data_len:]
@@ -131,29 +150,31 @@ class DataProcessor:
         
         return train, test
     
-    def create_xgboost_features(self):
+    def create_xgboost_features(self, lookback=60):
         """
-        Create engineered features for XGBoost model
-        Includes: Moving Averages, RSI, Time features
+        Create features for XGBoost using a lookback window approach
+        Similar to LSTM but flattened for tree-based models
+        
+        Args:
+            lookback: Number of previous days to include as features
         
         Returns:
             tuple: (X_train, X_test, y_train, y_test)
         """
         df = self.data.copy()
-        
-        # Sort by date to ensure chronological order
+        df['date'] = pd.to_datetime(df['date'])
         df = df.sort_values('date').reset_index(drop=True)
         
-        # 1. Moving Averages
-        df['MA_7'] = df['close'].rolling(window=7).mean()
-        df['MA_21'] = df['close'].rolling(window=21).mean()
-        df['MA_50'] = df['close'].rolling(window=50).mean()
+        # Create lag features (previous N days of prices)
+        for i in range(1, lookback + 1):
+            df[f'Close_Lag_{i}'] = df['close'].shift(i)
         
-        # 2. Moving Average Ratios (better than absolute values)
-        df['MA_Ratio_7_21'] = df['MA_7'] / df['MA_21']
-        df['MA_Ratio_21_50'] = df['MA_21'] / df['MA_50']
+        # Add simple technical indicators
+        df['MA_5'] = df['close'].rolling(window=5).mean()
+        df['MA_20'] = df['close'].rolling(window=20).mean()
+        df['Volatility_10'] = df['close'].rolling(window=10).std()
         
-        # 3. RSI (Relative Strength Index)
+        # RSI
         def calculate_rsi(data, window=14):
             delta = data.diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
@@ -164,34 +185,12 @@ class DataProcessor:
         
         df['RSI'] = calculate_rsi(df['close'])
         
-        # 4. Time-based features
-        df['Day'] = df['date'].dt.dayofweek
-        df['Month'] = df['date'].dt.month
-        
-        # 5. Lag features - MORE of them
-        for i in range(1, 6):  # Last 5 days
-            df[f'Lag_{i}'] = df['close'].shift(i)
-        
-        # 6. Price change percentage (more stable than absolute)
-        df['Price_Change_Pct_1d'] = df['close'].pct_change(1) * 100
-        df['Price_Change_Pct_5d'] = df['close'].pct_change(5) * 100
-        
-        # 7. Volatility
-        df['Volatility_10'] = df['close'].rolling(window=10).std()
-        df['Volatility_30'] = df['close'].rolling(window=30).std()
-        
-        # Drop rows with NaN values
+        # Drop NaN rows
         df = df.dropna().reset_index(drop=True)
         
-        # ✅ IMPROVED: Use percentage-based features instead of absolute prices
-        feature_columns = [
-            'MA_Ratio_7_21', 'MA_Ratio_21_50',  # Ratios instead of absolute MA
-            'RSI', 
-            'Day', 'Month',
-            'Lag_1', 'Lag_2', 'Lag_3', 'Lag_4', 'Lag_5',
-            'Price_Change_Pct_1d', 'Price_Change_Pct_5d',
-            'Volatility_10', 'Volatility_30'
-        ]
+        # Feature columns: last 10 days + technical indicators
+        feature_columns = [f'Close_Lag_{i}' for i in range(1, lookback + 1)]
+        feature_columns += ['MA_5', 'MA_20', 'Volatility_10', 'RSI']
         
         X = df[feature_columns].values
         y = df['close'].values
@@ -204,20 +203,18 @@ class DataProcessor:
         y_train = y[:train_size]
         y_test = y[train_size:]
         
-        # Feature scaling
-        from sklearn.preprocessing import StandardScaler
-        self.xgb_scaler = StandardScaler()
-        X_train = self.xgb_scaler.fit_transform(X_train)
-        X_test = self.xgb_scaler.transform(X_test)
+        # NO SCALING - XGBoost often works better without it for price data
         
-        print(f"✅ XGBoost features created and scaled!")
+        print(f"✅ XGBoost features created!")
         print(f"   Features: {len(feature_columns)}")
+        print(f"   Lookback window: {lookback} days")
         print(f"   Training samples: {len(X_train)}")
         print(f"   Test samples: {len(X_test)}")
         
-        # Store for later use
+        # Store for later
         self.xgboost_df = df
         self.xgboost_train_size = train_size
+        self.xgb_feature_names = feature_columns
         
         return X_train, X_test, y_train, y_test
 

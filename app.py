@@ -75,15 +75,15 @@ with st.sidebar:
     
     # Model parameters
     st.subheader("LSTM Parameters")
-    epochs = st.slider("Training Epochs", min_value=10, max_value=50, value=25, step=5)
+    epochs = st.slider("Training Epochs", min_value=10, max_value=50, value=20, step=5)
     batch_size = st.slider("Batch Size", min_value=16, max_value=64, value=32, step=16)
     
     st.markdown("---")
 
     st.subheader("XGBoost Parameters")
-    n_estimators = st.slider("N Estimators", min_value=50, max_value=500, value=200, step=50)
-    max_depth = st.slider("Max Depth", min_value=3, max_value=15, value=7, step=1)
-    learning_rate = st.slider("Learning Rate", min_value=0.01, max_value=0.3, value=0.05, step=0.01)
+    n_estimators = st.slider("N Estimators", min_value=50, max_value=1000, value=1000, step=50)
+    max_depth = st.slider("Max Depth", min_value=3, max_value=15, value=3, step=1)
+    learning_rate = st.slider("Learning Rate", min_value=0.01, max_value=0.3, value=0.02, step=0.01)
 
     st.subheader("About")
     st.info("""
@@ -299,14 +299,8 @@ with tab2:
         st.success("✅ Features created successfully!")
         
         # Display feature info
-        feature_names = [
-            'MA_Ratio_7_21', 'MA_Ratio_21_50',
-            'RSI', 
-            'Day', 'Month',
-            'Lag_1', 'Lag_2', 'Lag_3', 'Lag_4', 'Lag_5',
-            'Price_Change_Pct_1d', 'Price_Change_Pct_5d',
-            'Volatility_10', 'Volatility_30'
-        ]
+        feature_names = processor.xgb_feature_names
+
         
         with st.expander("📊 View Feature Statistics"):
            
