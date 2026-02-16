@@ -81,9 +81,9 @@ with st.sidebar:
     st.markdown("---")
 
     st.subheader("XGBoost Parameters")
-    n_estimators = st.slider("N Estimators", min_value=50, max_value=1000, value=1000, step=50)
-    max_depth = st.slider("Max Depth", min_value=3, max_value=15, value=3, step=1)
-    learning_rate = st.slider("Learning Rate", min_value=0.01, max_value=0.3, value=0.02, step=0.01)
+    n_estimators = st.slider("N Estimators", min_value=50, max_value=1000, value=800, step=50)
+    max_depth = st.slider("Max Depth", min_value=3, max_value=15, value=6, step=1)
+    learning_rate = st.slider("Learning Rate", min_value=0.01, max_value=0.3, value=0.05, step=0.01)
 
     st.subheader("About")
     st.info("""
@@ -188,6 +188,13 @@ with tab1:
         with st.spinner("🔮 Making predictions..."):
             predictions_scaled = lstm_model.predict(x_test)
             predictions = processor.inverse_transform(predictions_scaled)
+
+        # DEBUG CHECK
+        st.write("DEBUG: Predictions calculated")
+
+        predictions = np.array(predictions).flatten()
+
+        
         
         # Calculate metrics
         metrics = get_metrics(y_test, predictions)
@@ -214,11 +221,16 @@ with tab1:
             )
             st.markdown('</div>', unsafe_allow_html=True)
         
-        st.info(f"""
-        **Interpretation:**
-        - RMSE of ${metrics['RMSE']:.2f} means the model's predictions are off by about ${metrics['RMSE']:.2f} on average.
-        - MAE of ${metrics['MAE']:.2f} shows the average absolute difference between predicted and actual prices.
-        """)
+        st.info(
+                f"""
+            **Interpretation:**
+
+            - RMSE of {metrics['RMSE']:.2f} means the model's predictions are off by approximately {metrics['RMSE']:.2f} units on average.
+
+            - MAE of {metrics['MAE']:.2f} represents the average absolute difference between predicted and actual prices.
+            """
+        )
+
         
         # Visualizations
         st.markdown("---")
@@ -265,27 +277,38 @@ with tab2:
     with col1:
         st.markdown("""
         ### About XGBoost Model
-        XGBoost (eXtreme Gradient Boosting) is a powerful machine learning algorithm that uses 
-        gradient boosting on decision trees. Unlike LSTM, it doesn't have built-in memory, 
-        so we engineer features to capture temporal patterns.
-        
-        **Key Features:**
-        - Uses 13 engineered features (Moving Averages, RSI, Lag prices, etc.)
-        - Fast training compared to deep learning
-        - Handles non-linear relationships well
-        - Feature importance visualization
+        XGBoost (eXtreme Gradient Boosting) is a tree-based ensemble learning algorithm 
+        that applies gradient boosting on decision trees to improve predictive accuracy.
+        Unlike LSTM, it does not inherently learn from sequences, so temporal dependencies 
+        are captured through engineered lag features.
+
+        **Key Features of This Implementation:**
+        - Uses a 60-day lookback window (same as LSTM)
+        - 64 engineered features including lag prices and technical indicators
+        - Tuned hyperparameters (shallow trees, low learning rate, regularization)
+        - Faster training compared to deep learning models
+        - Provides feature importance for interpretability
         """)
-    
+
     with col2:
         st.markdown("""
         ### Engineered Features
-        - **Moving Averages**: 7, 21, 50 days
-        - **RSI**: Momentum indicator
-        - **Time Features**: Day, Month, Quarter
-        - **Lag Features**: Previous 3 days prices
-        - **Volatility**: Rolling std deviation
-        - **Price Changes**: Absolute & percentage
+
+        **Lag Features (60 Days Memory):**
+        - Close_Lag_1 to Close_Lag_60
+
+        **Technical Indicators:**
+        - Moving Averages: MA_5, MA_20
+        - Volatility_10 (Rolling Standard Deviation)
+        - RSI (Relative Strength Index)
+
+        **Total Features:** 64
+
+        These engineered inputs allow XGBoost to approximate temporal patterns 
+        using structured feature representations.
         """)
+    
+    
     
     st.markdown("---")
     
@@ -328,6 +351,12 @@ with tab2:
         # Make predictions
         with st.spinner("🔮 Making predictions..."):
             predictions = xgb_model.predict(X_test)
+
+        # DEBUG IN TERMINAL
+        print("DEBUG: Predictions calculated")
+        print("Prediction Mean:", float(np.mean(predictions)))
+        print("Prediction Std:", float(np.std(predictions)))
+        print("First 5 Predictions:", predictions[:5])      
         
         # Calculate metrics
         metrics = get_metrics(y_test, predictions)
@@ -367,7 +396,13 @@ with tab2:
         # Get train and test data for XGBoost
         train_data_xgb, test_data_xgb = processor.get_xgboost_train_test_data()
         test_data_xgb = test_data_xgb.copy()
+        # test_data_xgb['Predictions'] = predictions
+        predictions = np.array(predictions).flatten()
+
+        # Align predictions exactly with test dataframe length
+        test_data_xgb = test_data_xgb.iloc[:len(predictions)].copy()
         test_data_xgb['Predictions'] = predictions
+
         
         # Create visualizer
         viz = Visualizer()

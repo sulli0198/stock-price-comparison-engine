@@ -184,10 +184,10 @@ class XGBoostModel:
             max_depth=self.max_depth,
             learning_rate=self.learning_rate,
             objective='reg:squarederror',
-            subsample=0.8,              # ← Prevent overfitting
+            subsample=1.0,              # ← Prevent overfitting
             colsample_bytree=0.8,       # ← Use 80% of features per tree
-            reg_alpha=0.1,              # ← added L1 regularization
-            reg_lambda=1.0,             # ← added L2 regularization
+            reg_alpha=0,              # ← added L1 regularization
+            reg_lambda=0,             # ← added L2 regularization
             random_state=42,
             n_jobs=-1
         )

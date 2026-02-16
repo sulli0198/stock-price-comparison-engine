@@ -52,8 +52,8 @@ class Visualizer:
         
         # Plot predictions
         ax.plot(
-            test_data['date'], 
-            predictions, 
+            test_data['date'].values[:len(predictions)], 
+            np.array(predictions).flatten(), 
             label='Predictions', 
             color='#d62728',
             linewidth=2,
@@ -69,8 +69,13 @@ class Visualizer:
         
         # Rotate x-axis labels for better readability
         plt.xticks(rotation=45)
+
+        # ax.set_ylim(
+        #     min(test_data['close'].min(), predictions.min()) * 0.98,
+        #     max(test_data['close'].max(), predictions.max()) * 1.02
+        # )
+
         plt.tight_layout()
-        
         return fig
     
     def plot_comparison(self, train_data, test_data, lstm_predictions, xgboost_predictions=None, 
@@ -172,33 +177,32 @@ class Visualizer:
         plt.tight_layout()
         return fig
     
-    def plot_feature_importance(self, feature_importance, feature_names):
+    def plot_feature_importance(self, feature_importance, feature_names, top_n=15):
         """
-        Plot feature importance for XGBoost
-        
-        Args:
-            feature_importance: Array of importance scores
-            feature_names: List of feature names
-        
-        Returns:
-            matplotlib figure object
+        Plot top N feature importance for XGBoost
         """
-        import pandas as pd
-        
-        # Create dataframe for sorting
+
         importance_df = pd.DataFrame({
             'Feature': feature_names,
             'Importance': feature_importance
-        }).sort_values('Importance', ascending=True)
-        
-        fig, ax = plt.subplots(figsize=(10, 8))
-        
-        # Horizontal bar chart
-        ax.barh(importance_df['Feature'], importance_df['Importance'], color='#9467bd')
+        }).sort_values('Importance', ascending=False).head(top_n)
+
+        # Reverse for better horizontal display
+        importance_df = importance_df.sort_values('Importance', ascending=True)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        ax.barh(
+            importance_df['Feature'],
+            importance_df['Importance']
+        )
+
         ax.set_xlabel('Importance Score', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Features', fontsize=12, fontweight='bold')
-        ax.set_title('XGBoost Feature Importance', fontsize=14, fontweight='bold', pad=20)
+        ax.set_ylabel('Top Features', fontsize=12, fontweight='bold')
+        ax.set_title(f'Top {top_n} Most Important Features (XGBoost)', 
+                    fontsize=14, fontweight='bold', pad=20)
+
         ax.grid(True, alpha=0.3, axis='x')
-        
         plt.tight_layout()
+
         return fig
