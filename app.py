@@ -69,7 +69,6 @@ st.markdown('<p class="sub-header">Comparing LSTM and XGBoost Models for Microso
 
 # Sidebar
 with st.sidebar:
-    st.image("https://img.icons8.com/fluency/96/stock-market.png", width=100)
     st.title("⚙️ Model Settings")
     st.markdown("---")
     
@@ -485,12 +484,29 @@ with tab3:
         
         viz = Visualizer()
         
-        # Use LSTM's train/test data (they should have similar date ranges)
+        # ✅ FIX: Align LSTM and XGBoost predictions by date
+        lstm_test_data = st.session_state['test_data'].copy()
+        xgb_test_data = st.session_state['xgb_test_data'].copy()
+        
+        # Get common date range (intersection)
+        lstm_dates = set(lstm_test_data['date'])
+        xgb_dates = set(xgb_test_data['date'])
+        common_dates = lstm_dates.intersection(xgb_dates)
+        
+        # Filter both datasets to common dates
+        lstm_aligned = lstm_test_data[lstm_test_data['date'].isin(common_dates)].sort_values('date').reset_index(drop=True)
+        xgb_aligned = xgb_test_data[xgb_test_data['date'].isin(common_dates)].sort_values('date').reset_index(drop=True)
+        
+        # Extract aligned predictions
+        lstm_pred_aligned = lstm_aligned['Predictions'].values
+        xgb_pred_aligned = xgb_aligned['Predictions'].values
+        
+        # Use LSTM's train data and aligned test data
         fig_comparison = viz.plot_comparison(
             st.session_state['train_data'],
-            st.session_state['test_data'],
-            st.session_state['lstm_predictions'],
-            st.session_state['xgb_predictions']
+            lstm_aligned,  # Use aligned data
+            lstm_pred_aligned,
+            xgb_pred_aligned
         )
         st.pyplot(fig_comparison)
         
